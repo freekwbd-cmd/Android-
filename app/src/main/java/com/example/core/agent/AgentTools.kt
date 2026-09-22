@@ -4,7 +4,10 @@ import android.content.Context
 import com.example.core.files.SafeFileManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 enum class AgentPermissionLevel {
     READ,
@@ -18,6 +21,7 @@ data class ToolResult(
     val success: Boolean,
     val summary: String,
     val outputData: String,
+    val affectedFiles: List<String> = emptyList(),
     val rollbackActionAvailable: Boolean = false
 )
 
@@ -48,7 +52,7 @@ class DirectoryScanTool : AgentTool {
                 appendLine("  • .$ext: $count files")
             }
         }
-        ToolResult(true, "Scanned ${files.size} files in ${dir.name}", report)
+        ToolResult(true, "Scanned ${files.size} files in ${dir.name}", report, files.map { it.name })
     }
 }
 
@@ -58,11 +62,38 @@ class FileReadTool : AgentTool {
     override val permissionLevel: AgentPermissionLevel = AgentPermissionLevel.READ
 
     override suspend fun execute(context: Context, params: Map<String, String>): ToolResult = withContext(Dispatchers.IO) {
-        val path = params["path"] ?: return@withContext ToolResult(false, "Missing file path", "")
+        val path = params["path"] ?: return@withContext ToolResult(false, "Missing file path parameter", "")
         val file = File(path)
         if (!file.exists()) return@withContext ToolResult(false, "File not found: ${file.name}", "")
         val content = SafeFileManager.readTextChunked(file, 8000)
-        ToolResult(true, "Read ${content.length} characters from ${file.name}", content)
+        ToolResult(true, "Read ${content.length} characters from ${file.name}", content, listOf(file.name))
+    }
+}
+
+class FileWriteTool : AgentTool {
+    override val name: String = "FileWriteTool"
+    override val description: String = "Writes or updates file contents in local workspace with backup."
+    override val permissionLevel: AgentPermissionLevel = AgentPermissionLevel.WRITE
+
+    override suspend fun execute(context: Context, params: Map<String, String>): ToolResult = withContext(Dispatchers.IO) {
+        val fileName = params["fileName"] ?: return@withContext ToolResult(false, "Missing fileName parameter", "")
+        val content = params["content"] ?: return@withContext ToolResult(false, "Missing content parameter", "")
+        val target = File(SafeFileManager.getRootWorkDirectory(context), fileName)
+
+        // Backup existing file for rollback if it exists
+        if (target.exists()) {
+            val backup = File(target.parentFile, "${target.name}.bak")
+            target.copyTo(backup, overwrite = true)
+        }
+
+        target.writeText(content)
+        ToolResult(
+            success = true,
+            summary = "Wrote ${content.length} bytes to ${target.name}",
+            outputData = "File saved successfully at ${target.absolutePath}",
+            affectedFiles = listOf(target.name),
+            rollbackActionAvailable = true
+        )
     }
 }
 
@@ -82,8 +113,8 @@ class CodeAnalysisTool : AgentTool {
         if (code.contains("catch (e: Exception) {}") || code.contains("catch (e: Throwable) {}")) {
             issues.add("Warning: Empty catch block hides silent failures.")
         }
-        if (code.contains("API_KEY") && code.contains("val apiKey = \"")) {
-            issues.add("Critical Security: Hardcoded API Key detected in source file. Inject via Secrets/BuildConfig.")
+        if (code.contains("API_KEY") && (code.contains("val apiKey = \"") || code.contains("sk-"))) {
+            issues.add("Critical Security: Hardcoded API Key detected in source file. Inject via Secrets/Keystore.")
         }
         if (code.contains("GlobalScope.launch")) {
             issues.add("Warning: GlobalScope causes coroutine memory leaks. Bind to viewModelScope.")
@@ -95,7 +126,7 @@ class CodeAnalysisTool : AgentTool {
             "Found ${issues.size} issues in $fileName:\n" + issues.joinToString("\n") { "• $it" }
         }
 
-        ToolResult(true, "Analyzed $fileName", report)
+        ToolResult(true, "Analyzed $fileName", report, listOf(fileName))
     }
 }
 
@@ -112,7 +143,7 @@ class SafeArchiveTool : AgentTool {
             val files = workDir.listFiles()?.filter { it.isFile } ?: emptyList()
             val res = SafeFileManager.createZipArchive(files, destZip)
             if (res.isSuccess) {
-                ToolResult(true, "Created safe archive ${destZip.name}", "Archive path: ${destZip.absolutePath}", rollbackActionAvailable = true)
+                ToolResult(true, "Created safe archive ${destZip.name}", "Archive path: ${destZip.absolutePath}", files.map { it.name }, rollbackActionAvailable = true)
             } else {
                 ToolResult(false, "Failed to create archive", res.exceptionOrNull()?.message ?: "")
             }
@@ -124,14 +155,39 @@ class SafeArchiveTool : AgentTool {
 
 class TerminalTool : AgentTool {
     override val name: String = "TerminalTool"
-    override val description: String = "Executes approved shell commands in local sandbox or Termux bridge."
+    override val description: String = "Executes real shell commands inside the Android app sandbox."
     override val permissionLevel: AgentPermissionLevel = AgentPermissionLevel.EXECUTE
 
     override suspend fun execute(context: Context, params: Map<String, String>): ToolResult = withContext(Dispatchers.IO) {
         val cmd = params["cmd"] ?: "uptime"
-        // Sandbox command simulation / inspection
-        val output = "Execution Sandbox:\n$ $cmd\nstatus: OK (exit code 0)\nenvironment: Android sandbox"
-        ToolResult(true, "Executed command safely: $cmd", output)
+        val workDir = SafeFileManager.getRootWorkDirectory(context)
+
+        try {
+            // Real process execution inside app sandbox
+            val process = ProcessBuilder("sh", "-c", cmd)
+                .directory(workDir)
+                .redirectErrorStream(true)
+                .start()
+
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = StringBuilder()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                output.appendLine(line)
+            }
+
+            val completed = process.waitFor(5, TimeUnit.SECONDS)
+            if (!completed) {
+                process.destroy()
+                return@withContext ToolResult(false, "Command timed out after 5 seconds", "$ $cmd\n[Process timed out]")
+            }
+
+            val exitCode = process.exitValue()
+            val resultSummary = if (exitCode == 0) "Executed: $cmd (Exit code: 0)" else "Command exited with code $exitCode"
+            ToolResult(exitCode == 0, resultSummary, "$ $cmd\n$output")
+        } catch (e: Exception) {
+            ToolResult(false, "Process execution error", "$ $cmd\nError: ${e.localizedMessage}")
+        }
     }
 }
 
@@ -139,6 +195,7 @@ object ToolRegistry {
     val allTools: List<AgentTool> = listOf(
         DirectoryScanTool(),
         FileReadTool(),
+        FileWriteTool(),
         CodeAnalysisTool(),
         SafeArchiveTool(),
         TerminalTool()

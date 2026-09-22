@@ -369,7 +369,8 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 viewModel.router.onlineClient.updateConfig(baseUrlInput, apiKeyInput)
-                                Toast.makeText(context, "Provider configuration saved!", Toast.LENGTH_SHORT).show()
+                                viewModel.saveProviderConfig("Custom Provider", baseUrlInput, apiKeyInput, modelInput)
+                                Toast.makeText(context, "Provider configuration encrypted and saved!", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                             shape = RoundedCornerShape(8.dp),

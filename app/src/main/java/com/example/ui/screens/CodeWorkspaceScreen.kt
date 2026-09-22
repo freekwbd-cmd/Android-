@@ -73,10 +73,19 @@ fun CodeWorkspaceScreen(
     val context = LocalContext.current
     val fileName by viewModel.codeFileName.collectAsState()
     val codeContent by viewModel.codeContent.collectAsState()
+    val pendingDiff by viewModel.pendingCodeModification.collectAsState()
 
     var editableCode by remember(codeContent) { mutableStateOf(codeContent) }
     var terminalOutput by remember { mutableStateOf<String?>(null) }
     val isTermuxAvailable = remember { TermuxBridge.isTermuxInstalled(context) }
+
+    // Diff Checkpoint Modal
+    pendingDiff?.let { diff ->
+        com.example.ui.components.CodeDiffModal(
+            modification = diff,
+            onDismiss = { viewModel.dismissDiffModal() }
+        )
+    }
 
     LazyColumn(
         modifier = modifier
@@ -135,7 +144,7 @@ fun CodeWorkspaceScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Button(
-                            onClick = { viewModel.aiFixCode() },
+                            onClick = { viewModel.requestAiFixWithDiff() },
                             colors = ButtonDefaults.buttonColors(containerColor = CyberSurface),
                             shape = RoundedCornerShape(8.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, NeonCrimson.copy(alpha = 0.5f)),
@@ -182,7 +191,7 @@ fun CodeWorkspaceScreen(
                                     val intent = TermuxBridge.getLaunchIntent(context)
                                     if (intent != null) context.startActivity(intent)
                                 } else {
-                                    terminalOutput = "Sandbox Terminal Output:\n$ ./run_analysis.sh\nScanning AST tokens for $fileName...\nCompilation checks: SUCCESS (0 errors)\nSandbox status: STABLE"
+                                    terminalOutput = "Termux Bridge Notice:\ncom.termux package not detected on this device.\nTo execute external bash/python scripts with full toolchains, install Termux.\nInternal sandbox environment is active for local file I/O."
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = CyberSurface),

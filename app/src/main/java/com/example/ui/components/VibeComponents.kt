@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
@@ -43,12 +44,14 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.agent.AgentStage
@@ -57,6 +60,13 @@ import com.example.core.router.AIMode
 import com.example.ui.theme.CyberBorder
 import com.example.ui.theme.CyberSurface
 import com.example.ui.theme.CyberSurfaceElevated
+import com.example.ui.theme.GlassBorderCyan
+import com.example.ui.theme.GlassBorderEmerald
+import com.example.ui.theme.GlassBorderMagenta
+import com.example.ui.theme.GlassBorderViolet
+import com.example.ui.theme.GlassHighlight
+import com.example.ui.theme.GlassSurface
+import com.example.ui.theme.GlassSurfaceElevated
 import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCrimson
 import com.example.ui.theme.NeonCyan
@@ -65,7 +75,58 @@ import com.example.ui.theme.NeonViolet
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.VibeGradients
+import com.example.ui.theme.VibeNeonMagenta
 import com.example.ui.theme.VoidBlack
+
+/**
+ * High-End Cyberpunk Color Glass Card with Specular Border & Subtle Glow
+ */
+@Composable
+fun VibeGlassCard(
+    modifier: Modifier = Modifier,
+    borderColor: Color = GlassBorderCyan,
+    glowColor: Color = NeonCyan.copy(alpha = 0.08f),
+    backgroundColor: Color = GlassSurfaceElevated,
+    cornerRadius: Dp = 16.dp,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        backgroundColor.copy(alpha = 0.85f),
+                        backgroundColor.copy(alpha = 0.60f)
+                    )
+                )
+            )
+            .border(
+                BorderStroke(
+                    1.2.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            borderColor,
+                            borderColor.copy(alpha = 0.25f)
+                        )
+                    )
+                ),
+                RoundedCornerShape(cornerRadius)
+            )
+            .drawBehind {
+                // Subtle top specular edge highlight
+                drawLine(
+                    color = GlassHighlight,
+                    start = Offset(16f, 1f),
+                    end = Offset(size.width - 16f, 1f),
+                    strokeWidth = 1.5f
+                )
+            }
+    ) {
+        content()
+    }
+}
 
 @Composable
 fun VibeCyberCard(
@@ -74,14 +135,12 @@ fun VibeCyberCard(
     backgroundColor: Color = CyberSurface,
     content: @Composable () -> Unit
 ) {
-    Card(
+    VibeGlassCard(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, borderColor),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
-    ) {
-        content()
-    }
+        borderColor = borderColor,
+        backgroundColor = backgroundColor,
+        content = content
+    )
 }
 
 @Composable
@@ -93,13 +152,13 @@ fun VibeStatusPill(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(50),
-        color = statusColor.copy(alpha = 0.15f),
-        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.5f))
+        color = statusColor.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.55f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -110,10 +169,36 @@ fun VibeStatusPill(
             Text(
                 text = label,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = statusColor
+                fontWeight = FontWeight.Bold,
+                color = statusColor,
+                letterSpacing = 0.5.sp
             )
         }
+    }
+}
+
+@Composable
+fun VibeGlowingIcon(
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 38.dp,
+    iconSize: Dp = 20.dp
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .border(1.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(iconSize)
+        )
     }
 }
 
@@ -126,114 +211,166 @@ fun VibeHeaderBar(
     onModeToggle: () -> Unit,
     onCreatorClick: () -> Unit
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("vibe_top_bar"),
-        color = VoidBlack,
-        border = BorderStroke(0.dp, Color.Transparent)
+        color = Color.Transparent
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .background(VibeGradients.GlassHeaderGradient)
+                .border(
+                    BorderStroke(
+                        0.8.dp,
+                        Brush.verticalGradient(
+                            listOf(
+                                GlassHighlight,
+                                GlassBorderCyan.copy(alpha = 0.3f)
+                            )
+                        )
+                    )
+                )
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                // Logo & Title
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.linearGradient(listOf(NeonCrimson, NeonViolet))
-                            ),
-                        contentAlignment = Alignment.Center
+                    // Logo & Brand
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "V",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
-                    }
-
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "VIBE",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                color = TextPrimary,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = "AI",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                color = NeonCrimson,
-                                letterSpacing = 1.sp
-                            )
-                        }
-                        Text(
-                            text = "by Shorif Uddin Piash",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = NeonCyan,
-                            modifier = Modifier.clickable { onCreatorClick() }
-                        )
-                    }
-                }
-
-                // Mode switch pill
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { onModeToggle() },
-                        color = if (mode == AIMode.OFFLINE) NeonEmerald.copy(alpha = 0.15f) else NeonCyan.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(NeonCrimson, VibeNeonMagenta, NeonViolet)
+                                    )
+                                )
+                                .border(1.dp, NeonCyan.copy(alpha = 0.6f), RoundedCornerShape(9.dp)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan)
-                            )
                             Text(
-                                text = if (mode == AIMode.OFFLINE) "OFFLINE" else "ONLINE",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan
+                                text = "V",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 20.sp,
+                                color = Color.White
+                            )
+                        }
+
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "VIBE",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp,
+                                    color = TextPrimary,
+                                    letterSpacing = 1.5.sp
+                                )
+                                Text(
+                                    text = "AI",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp,
+                                    color = NeonCrimson,
+                                    letterSpacing = 1.5.sp
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(NeonViolet.copy(alpha = 0.25f))
+                                        .border(0.8.dp, NeonViolet, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "VIBE EDITION",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = NeonCyan,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Architect: Shorif Uddin Piash (শরিফ উদ্দিন পিয়াস)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NeonCyan.copy(alpha = 0.9f),
+                                modifier = Modifier.clickable { onCreatorClick() }
                             )
                         }
                     }
 
-                    // RAM pill
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = CyberSurfaceElevated,
-                        border = BorderStroke(1.dp, CyberBorder)
+                    // Mode switch pill & RAM HUD
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "${ramMbAvailable}M RAM",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { onModeToggle() },
+                            color = if (mode == AIMode.OFFLINE) NeonEmerald.copy(alpha = 0.16f) else NeonCyan.copy(alpha = 0.16f),
+                            border = BorderStroke(1.2.dp, if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background((if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan).copy(alpha = pulseAlpha))
+                                )
+                                Text(
+                                    text = if (mode == AIMode.OFFLINE) "OFFLINE" else "ONLINE",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan
+                                )
+                            }
+                        }
+
+                        // RAM pill with Glass highlight
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = GlassSurfaceElevated,
+                            border = BorderStroke(1.dp, GlassBorderCyan.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = "${ramMbAvailable}M",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeonCyan,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -252,16 +389,16 @@ fun VibeCodeBlock(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = VoidBlack,
-        border = BorderStroke(1.dp, CyberBorder)
+        border = BorderStroke(1.2.dp, GlassBorderCyan.copy(alpha = 0.5f))
     ) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(CyberSurfaceElevated)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .background(GlassSurfaceElevated)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -293,7 +430,7 @@ fun VibeCodeBlock(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
                 color = TextPrimary,
-                modifier = Modifier.padding(10.dp)
+                modifier = Modifier.padding(12.dp)
             )
         }
     }
@@ -311,7 +448,6 @@ fun VibeAgentTimelineView(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Status indicator node
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     val nodeColor = when {
                         node.isCompleted -> NeonEmerald
@@ -322,7 +458,7 @@ fun VibeAgentTimelineView(
 
                     Box(
                         modifier = Modifier
-                            .size(18.dp)
+                            .size(20.dp)
                             .clip(CircleShape)
                             .background(nodeColor.copy(alpha = 0.2f))
                             .border(1.5.dp, nodeColor, CircleShape),
@@ -333,7 +469,7 @@ fun VibeAgentTimelineView(
                         } else if (node.isRunning) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
+                                    .size(7.dp)
                                     .clip(CircleShape)
                                     .background(NeonCyan)
                             )
@@ -350,7 +486,6 @@ fun VibeAgentTimelineView(
                     }
                 }
 
-                // Node content
                 Column {
                     Text(
                         text = node.title,

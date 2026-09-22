@@ -72,6 +72,9 @@ import com.example.ui.theme.CyberBorder
 import com.example.ui.theme.CyberSurface
 import com.example.ui.theme.CyberSurfaceElevated
 import com.example.ui.theme.DarkCanvas
+import com.example.ui.theme.GlassBorderCyan
+import com.example.ui.theme.GlassHighlight
+import com.example.ui.theme.GlassSurfaceElevated
 import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCrimson
 import com.example.ui.theme.NeonCyan
@@ -81,6 +84,8 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.VibeAITheme
+import com.example.ui.theme.VibeGradients
+import com.example.ui.theme.VibeNeonMagenta
 import com.example.ui.theme.VoidBlack
 import com.example.ui.viewmodel.VibeAIViewModel
 import com.example.ui.viewmodel.VibeScreen
@@ -226,82 +231,105 @@ fun VibeCyberBottomNav(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag("vibe_bottom_bar"),
-        color = CyberSurface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, CyberBorder)
+        color = Color.Transparent
     ) {
-        val scrollState = rememberScrollState()
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(scrollState)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(
+                            GlassSurfaceElevated.copy(alpha = 0.92f),
+                            VoidBlack.copy(alpha = 0.98f)
+                        )
+                    )
+                )
+                .border(
+                    androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(
+                                GlassHighlight,
+                                GlassBorderCyan.copy(alpha = 0.35f)
+                            )
+                        )
+                    )
+                )
         ) {
-            NavItem(
-                screen = VibeScreen.HOME,
-                label = "Home",
-                icon = Icons.Default.Home,
-                selected = currentScreen == VibeScreen.HOME,
-                accentColor = NeonCrimson,
-                onClick = { onSelectScreen(VibeScreen.HOME) }
-            )
-            NavItem(
-                screen = VibeScreen.CHAT,
-                label = "Chat",
-                icon = Icons.Default.ChatBubble,
-                selected = currentScreen == VibeScreen.CHAT,
-                accentColor = NeonCrimson,
-                onClick = { onSelectScreen(VibeScreen.CHAT) }
-            )
-            NavItem(
-                screen = VibeScreen.AGENT,
-                label = "Agent",
-                icon = Icons.Default.Psychology,
-                selected = currentScreen == VibeScreen.AGENT,
-                accentColor = NeonViolet,
-                onClick = { onSelectScreen(VibeScreen.AGENT) }
-            )
-            NavItem(
-                screen = VibeScreen.FILES,
-                label = "Files",
-                icon = Icons.Default.Folder,
-                selected = currentScreen == VibeScreen.FILES,
-                accentColor = NeonEmerald,
-                onClick = { onSelectScreen(VibeScreen.FILES) }
-            )
-            NavItem(
-                screen = VibeScreen.CODE,
-                label = "Code",
-                icon = Icons.Default.Code,
-                selected = currentScreen == VibeScreen.CODE,
-                accentColor = NeonCyan,
-                onClick = { onSelectScreen(VibeScreen.CODE) }
-            )
-            NavItem(
-                screen = VibeScreen.MODELS,
-                label = "Models",
-                icon = Icons.Default.DeveloperBoard,
-                selected = currentScreen == VibeScreen.MODELS,
-                accentColor = NeonAmber,
-                onClick = { onSelectScreen(VibeScreen.MODELS) }
-            )
-            NavItem(
-                screen = VibeScreen.TOOLS,
-                label = "Tools",
-                icon = Icons.Default.Construction,
-                selected = currentScreen == VibeScreen.TOOLS,
-                accentColor = NeonViolet,
-                onClick = { onSelectScreen(VibeScreen.TOOLS) }
-            )
-            NavItem(
-                screen = VibeScreen.SETTINGS,
-                label = "Settings",
-                icon = Icons.Default.Settings,
-                selected = currentScreen == VibeScreen.SETTINGS,
-                accentColor = NeonCyan,
-                onClick = { onSelectScreen(VibeScreen.SETTINGS) }
-            )
+            val scrollState = rememberScrollState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NavItem(
+                    screen = VibeScreen.HOME,
+                    label = "Home",
+                    icon = Icons.Default.Home,
+                    selected = currentScreen == VibeScreen.HOME,
+                    accentColor = NeonCrimson,
+                    onClick = { onSelectScreen(VibeScreen.HOME) }
+                )
+                NavItem(
+                    screen = VibeScreen.CHAT,
+                    label = "Chat",
+                    icon = Icons.Default.ChatBubble,
+                    selected = currentScreen == VibeScreen.CHAT,
+                    accentColor = NeonCyan,
+                    onClick = { onSelectScreen(VibeScreen.CHAT) }
+                )
+                NavItem(
+                    screen = VibeScreen.AGENT,
+                    label = "Agent",
+                    icon = Icons.Default.Psychology,
+                    selected = currentScreen == VibeScreen.AGENT,
+                    accentColor = NeonViolet,
+                    onClick = { onSelectScreen(VibeScreen.AGENT) }
+                )
+                NavItem(
+                    screen = VibeScreen.FILES,
+                    label = "Files",
+                    icon = Icons.Default.Folder,
+                    selected = currentScreen == VibeScreen.FILES,
+                    accentColor = NeonEmerald,
+                    onClick = { onSelectScreen(VibeScreen.FILES) }
+                )
+                NavItem(
+                    screen = VibeScreen.CODE,
+                    label = "Code",
+                    icon = Icons.Default.Code,
+                    selected = currentScreen == VibeScreen.CODE,
+                    accentColor = VibeNeonMagenta,
+                    onClick = { onSelectScreen(VibeScreen.CODE) }
+                )
+                NavItem(
+                    screen = VibeScreen.MODELS,
+                    label = "Models",
+                    icon = Icons.Default.DeveloperBoard,
+                    selected = currentScreen == VibeScreen.MODELS,
+                    accentColor = NeonAmber,
+                    onClick = { onSelectScreen(VibeScreen.MODELS) }
+                )
+                NavItem(
+                    screen = VibeScreen.TOOLS,
+                    label = "Tools",
+                    icon = Icons.Default.Construction,
+                    selected = currentScreen == VibeScreen.TOOLS,
+                    accentColor = NeonViolet,
+                    onClick = { onSelectScreen(VibeScreen.TOOLS) }
+                )
+                NavItem(
+                    screen = VibeScreen.SETTINGS,
+                    label = "Settings",
+                    icon = Icons.Default.Settings,
+                    selected = currentScreen == VibeScreen.SETTINGS,
+                    accentColor = NeonCyan,
+                    onClick = { onSelectScreen(VibeScreen.SETTINGS) }
+                )
+            }
         }
     }
 }
@@ -317,12 +345,12 @@ fun NavItem(
 ) {
     Surface(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(22.dp))
             .clickable { onClick() }
             .testTag("nav_item_${screen.name.lowercase()}"),
-        color = if (selected) accentColor.copy(alpha = 0.15f) else Color.Transparent,
+        color = if (selected) accentColor.copy(alpha = 0.20f) else Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(
-            1.dp,
+            1.2.dp,
             if (selected) accentColor else Color.Transparent
         )
     ) {
@@ -331,18 +359,34 @@ fun NavItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (selected) accentColor else TextMuted,
-                modifier = Modifier.size(16.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) accentColor.copy(alpha = 0.25f) else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (selected) accentColor else TextMuted,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
             Text(
                 text = label,
                 fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
                 color = if (selected) accentColor else TextSecondary
             )
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(accentColor)
+                )
+            }
         }
     }
 }

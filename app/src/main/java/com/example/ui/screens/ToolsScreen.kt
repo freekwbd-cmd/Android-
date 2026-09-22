@@ -154,8 +154,8 @@ fun ToolsScreen(
                                     val target = files.firstOrNull { it.file.isFile && !it.name.endsWith(".enc") }?.file
                                     if (target != null) {
                                         val dest = File(target.parentFile, target.name + ".enc")
-                                        val res = SafeFileManager.encryptFile(target, dest, encPassphrase)
-                                        encStatus = if (res.isSuccess) "✓ Encrypted ${target.name} -> ${dest.name}" else "Encryption failed: ${res.exceptionOrNull()?.message}"
+                                        val res = com.example.core.security.CryptoManager.encryptFileGcm(target, dest, encPassphrase.toCharArray())
+                                        encStatus = if (res.isSuccess) "✓ AES-GCM Encrypted ${target.name} -> ${dest.name}" else "Encryption failed: ${res.exceptionOrNull()?.message}"
                                         viewModel.refreshFiles()
                                     } else {
                                         encStatus = "No unencrypted file found in workspace."
@@ -169,7 +169,7 @@ fun ToolsScreen(
                         ) {
                             Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonViolet)
                             Spacer(modifier = Modifier.size(4.dp))
-                            Text("Encrypt File", fontSize = 11.sp, color = NeonViolet)
+                            Text("Encrypt (AES-GCM)", fontSize = 11.sp, color = NeonViolet)
                         }
 
                         Button(
@@ -182,8 +182,8 @@ fun ToolsScreen(
                                     val target = files.firstOrNull { it.name.endsWith(".enc") }?.file
                                     if (target != null) {
                                         val dest = File(target.parentFile, target.name.removeSuffix(".enc") + "_decrypted.txt")
-                                        val res = SafeFileManager.decryptFile(target, dest, encPassphrase)
-                                        encStatus = if (res.isSuccess) "✓ Decrypted ${target.name} -> ${dest.name}" else "Decryption failed (bad key or corrupted file)"
+                                        val res = com.example.core.security.CryptoManager.decryptFileGcm(target, dest, encPassphrase.toCharArray())
+                                        encStatus = if (res.isSuccess) "✓ Authenticated & Decrypted -> ${dest.name}" else "Decryption failed: ${res.exceptionOrNull()?.message ?: "Bad passphrase or corrupted file"}"
                                         viewModel.refreshFiles()
                                     } else {
                                         encStatus = "No .enc encrypted file found in workspace."
@@ -197,7 +197,7 @@ fun ToolsScreen(
                         ) {
                             Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonCyan)
                             Spacer(modifier = Modifier.size(4.dp))
-                            Text("Decrypt File", fontSize = 11.sp, color = NeonCyan)
+                            Text("Decrypt (AES-GCM)", fontSize = 11.sp, color = NeonCyan)
                         }
                     }
 
@@ -230,43 +230,55 @@ fun ToolsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         MediaActionRow(
                             title = "Image Vision & OCR Inspection",
-                            subtitle = "Sample bounding boxes & extract text",
+                            subtitle = "Real dimension, MIME & vision limit check",
                             icon = Icons.Default.Image,
                             color = NeonCyan,
                             onClick = {
-                                mediaAnalysisResult = """Image Vision Analysis Result:
-• Resolution: 1080x1080 (32-bit ARGB)
-• Primary Objects: UI Layout, Neural Diagram, Graph Node
-• Extracted Text (OCR): "VibeAI Neural Core • 100% Offline"
-• Confidence Score: 98.4%"""
+                                scope.launch {
+                                    val img = files.firstOrNull { it.category == com.example.core.files.FileCategory.IMAGES }?.file
+                                    if (img != null) {
+                                        val inspect = com.example.core.files.DocumentParser.inspectImageSafely(img)
+                                        mediaAnalysisResult = inspect.getOrNull()?.notice ?: "Failed to inspect ${img.name}"
+                                    } else {
+                                        mediaAnalysisResult = "No image file in workspace.\nLIMITATION: Local model is text-only. Semantic image comprehension and OCR text extraction require an online vision model (e.g. GPT-4o) or on-device LLaVA weights."
+                                    }
+                                }
                             }
                         )
 
                         MediaActionRow(
                             title = "Audio Waveform & Transcription",
-                            subtitle = "Local STT spectrogram & speech parsing",
+                            subtitle = "Real duration, audio metadata & STT status",
                             icon = Icons.Default.MusicNote,
                             color = NeonEmerald,
                             onClick = {
-                                mediaAnalysisResult = """Audio Telemetry Result:
-• Format: 44.1kHz 16-bit PCM Mono
-• Duration: 00:04:12
-• Transcript Summary: "VibeAgent pipeline initialized with 0 network calls."
-• Signal to Noise Ratio: 32 dB"""
+                                scope.launch {
+                                    val audio = files.firstOrNull { it.category == com.example.core.files.FileCategory.AUDIO }?.file
+                                    if (audio != null) {
+                                        val inspect = com.example.core.files.DocumentParser.inspectAudioSafely(audio)
+                                        mediaAnalysisResult = inspect.getOrNull()?.notice ?: "Failed to inspect ${audio.name}"
+                                    } else {
+                                        mediaAnalysisResult = "No audio file in workspace.\nLIMITATION: On-device Speech-To-Text (STT) requires an installed Whisper engine. Connect an online API or install Whisper weights."
+                                    }
+                                }
                             }
                         )
 
                         MediaActionRow(
                             title = "Video Keyframe Sampler",
-                            subtitle = "Sample uniform frames without full memory load",
+                            subtitle = "Real resolution, duration & frame bounds",
                             icon = Icons.Default.Videocam,
                             color = NeonCrimson,
                             onClick = {
-                                mediaAnalysisResult = """Video Frame Sampler:
-• Container: MP4 (H.264 / AAC)
-• Sampled Frames: 8 uniform checkpoints extracted
-• Memory overhead: < 12 MB (Streamed via ExoPlayer/Media3)
-• Keyframes ready for multimodal reasoning context."""
+                                scope.launch {
+                                    val video = files.firstOrNull { it.category == com.example.core.files.FileCategory.VIDEO }?.file
+                                    if (video != null) {
+                                        val inspect = com.example.core.files.DocumentParser.inspectVideoSafely(video)
+                                        mediaAnalysisResult = inspect.getOrNull()?.notice ?: "Failed to inspect ${video.name}"
+                                    } else {
+                                        mediaAnalysisResult = "No video file in workspace.\nLIMITATION: Video understanding requires an online multimodal model or native vision model."
+                                    }
+                                }
                             }
                         )
                     }
