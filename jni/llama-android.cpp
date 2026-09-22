@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <ctime>
 #include <android/log.h>
 
 #include "llama.h"
@@ -41,8 +42,7 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeLoadModel(
     LOGI("loading model: %s", path.c_str());
 
     llama_model_params mparams = llama_model_default_params();
-    // keep mmap on: 5GB+ model must NOT be fully copied into RAM
-    mparams.use_mmap = true;
+    // note: current llama.cpp mmaps weights by default (no full RAM copy)
 
     llama_model *model = llama_model_load_from_file(path.c_str(), mparams);
     if (!model) {
@@ -100,16 +100,16 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeGenerate(
     llama_sampler_chain_add(sess->sampler, llama_sampler_init_top_p(jtopP, 1));
     llama_sampler_chain_add(sess->sampler, llama_sampler_init_dist((uint32_t) time(nullptr)));
 
+    const struct llama_vocab *vocab = llama_model_get_vocab(sess->model);
     std::string prompt = jstring_to_std(env, jprompt);
 
     const int n_ctx = (int) llama_n_ctx(sess->ctx);
     std::vector<llama_token> tokens(n_ctx);
-    int n_tokens = llama_tokenize(sess->model, prompt.c_str(), (int) prompt.size(),
-                                 tokens.data(), (int) tokens.size(), true, true);
+    int n_tokens = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(),
+                                  tokens.data(), (int) tokens.size(), true, true);
     if (n_tokens < 0) {
-        // buffer too small (shouldn't happen); retry with bigger buffer
         tokens.resize(-n_tokens);
-        n_tokens = llama_tokenize(sess->model, prompt.c_str(), (int) prompt.size(),
+        n_tokens = llama_tokenize(vocab, prompt.c_str(), (int) prompt.size(),
                                  tokens.data(), (int) tokens.size(), true, true);
     }
     if (n_tokens <= 0) return -3;
@@ -135,9 +135,9 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeGenerate(
         if (sess->cancelled.load()) break;
 
         llama_token tok = llama_sampler_sample(sess->sampler, sess->ctx, -1);
-        if (llama_token_is_eog(sess->model, tok)) break;
+        if (llama_vocab_is_eog(vocab, tok)) break;
 
-        int n = llama_token_to_piece(sess->model, tok, piece, sizeof(piece), 0, true);
+        int n = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
         if (n > 0) {
             jstring jtok = env->NewStringUTF(std::string(piece, n).c_str());
             env->CallVoidMethod(jcallback, onToken, jtok);
