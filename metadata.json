@@ -1,0 +1,6 @@
+{
+  "name": "VibeAI",
+  "description": "Your Pocket AI Agent — Cyberpunk AI Workstation with offline local LLM, online OpenAI-compatible AI, autonomous Agent Mode, code workspace & file manager. Created by Shorif Uddin Piash.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Glow V Crest -->
+    <path
+        android:pathData="M30,34 L54,76 L78,34 L70,34 L54,63 L38,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="30"
+                android:startY="34"
+                android:endX="78"
+                android:endY="76"
+                android:type="linear">
+                <item android:color="#FF2A55" android:offset="0.0" />
+                <item android:color="#9D4EDD" android:offset="0.6" />
+                <item android:color="#00F0FF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Inner Core Wing -->
+    <path
+        android:pathData="M38,34 L54,64 L54,48 L44,34 Z"
+        android:fillColor="#FF5C8A" />
+    <path
+        android:pathData="M70,34 L54,64 L54,48 L64,34 Z"
+        android:fillColor="#C77DFF" />
+    <!-- Center AI Core Diamond -->
+    <path
+        android:pathData="M54,36 L60,45 L54,54 L48,45 Z"
+        android:fillColor="#00F0FF" />
+    <!-- Neural Node Dots -->
+    <path
+        android:pathData="M54,32 A2.5,2.5 0 1,1 54,31.9 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M30,34 A2.5,2.5 0 1,1 30,33.9 Z"
+        android:fillColor="#FF2A55" />
+    <path
+        android:pathData="M78,34 A2.5,2.5 0 1,1 78,33.9 Z"
+        android:fillColor="#00F0FF" />
+    <path
+        android:pathData="M54,76 A3,3 0 1,1 54,75.9 Z"
+        android:fillColor="#9D4EDD" />
+</vector>
