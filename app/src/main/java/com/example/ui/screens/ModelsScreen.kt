@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -30,14 +33,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
@@ -98,6 +105,7 @@ import com.example.ui.theme.VibeGradients
 import com.example.ui.theme.VibeNeonMagenta
 import com.example.ui.theme.VoidBlack
 import com.example.ui.viewmodel.VibeAIViewModel
+import com.example.ui.viewmodel.VibeScreen
 import java.io.File
 import java.util.Locale
 
@@ -111,6 +119,14 @@ fun ModelsScreen(
     val benchmark by viewModel.benchmarkResult.collectAsState()
     val validation by viewModel.importedModelValidation.collectAsState()
     val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val importProgress by viewModel.importProgress.collectAsState()
+    val scanStatusMessage by viewModel.scanStatusMessage.collectAsState()
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.importGGUFFromUri(it) }
+    }
 
     var customUrlInput by remember { mutableStateOf("") }
     var customNameInput by remember { mutableStateOf("") }
@@ -430,6 +446,122 @@ fun ModelsScreen(
             }
         }
 
+        // Device File Import Progress Card
+        if (importProgress != null) {
+            val imp = importProgress!!
+            item {
+                VibeGlassCard(
+                    borderColor = when {
+                        imp.isSuccess -> GlassBorderEmerald
+                        imp.error != null -> GlassBorderMagenta
+                        else -> GlassBorderViolet
+                    },
+                    backgroundColor = GlassSurfaceElevated
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (imp.isSuccess) Icons.Default.Check else if (imp.error != null) Icons.Default.Cancel else Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    tint = if (imp.isSuccess) NeonEmerald else if (imp.error != null) NeonCrimson else NeonViolet,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "LOCAL MODEL IMPORT: ${imp.fileName}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = imp.error ?: imp.statusText,
+                                        fontSize = 10.sp,
+                                        color = if (imp.isSuccess) NeonEmerald else if (imp.error != null) NeonCrimson else NeonCyan
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.dismissImportStatus() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Cancel, contentDescription = "Dismiss", tint = TextMuted, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        if (imp.isImporting) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { imp.progressPercent },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                color = NeonViolet,
+                                trackColor = CyberBorder
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${imp.copiedMb} MB / ${if (imp.totalMb > 0) "${imp.totalMb} MB" else "..."} (${(imp.progressPercent * 100).toInt()}%)",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Auto-Scan Storage Notification
+        if (scanStatusMessage != null) {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = CyberSurfaceElevated,
+                    border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = scanStatusMessage!!,
+                                fontSize = 11.sp,
+                                color = TextPrimary
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.dismissScanStatus() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = "Dismiss", tint = TextMuted, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+        }
+
         // DIRECT ONLINE MODEL DOWNLOAD SECTION HEADER
         item {
             Row(
@@ -438,16 +570,19 @@ fun ModelsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(17.dp))
                     Text(
-                        text = "ONLINE MODEL HUB (ডাইরেক্ট ডাউনলোড)",
+                        text = "ONLINE MODEL HUB (ডাউনলোড)",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Black,
                         color = NeonCyan,
-                        letterSpacing = 1.sp
+                        letterSpacing = 0.5.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
 
@@ -459,11 +594,13 @@ fun ModelsScreen(
                     border = BorderStroke(0.8.dp, GlassBorderCyan)
                 ) {
                     Text(
-                        text = if (showCustomUrlCard) "Hide URL Input" else "+ Custom URL",
+                        text = if (showCustomUrlCard) "Hide URL" else "+ Custom URL",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = NeonCyan,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                     )
                 }
             }
@@ -578,7 +715,10 @@ fun ModelsScreen(
                                 text = preset.name,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                             if (preset.isRecommended) {
                                 Box(
@@ -586,9 +726,16 @@ fun ModelsScreen(
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(NeonEmerald.copy(alpha = 0.2f))
                                         .border(0.8.dp, NeonEmerald, RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
                                 ) {
-                                    Text("BEST FOR MOBILE", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = NeonEmerald)
+                                    Text(
+                                        "MOBILE PICK",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = NeonEmerald,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
                             }
                         }
@@ -675,24 +822,73 @@ fun ModelsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "LOCAL GGUF FILE VALIDATOR",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = NeonViolet,
-                            letterSpacing = 1.sp
-                        )
-                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = NeonViolet, modifier = Modifier.size(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            VibeGlowingIcon(icon = Icons.Default.FolderOpen, tint = NeonViolet, size = 32.dp, iconSize = 16.dp)
+                            Text(
+                                text = "LOAD MANUALLY DOWNLOADED MODEL",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeonViolet,
+                                letterSpacing = 1.sp
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Inspect any .gguf file on storage to verify binary magic header, architecture, and memory compatibility:",
-                        fontSize = 10.sp,
-                        color = TextMuted
+                        text = "আপনি যদি ব্রাউজার বা অন্য কোথা থেকে .gguf মডেল ডাউনলোড করে থাকেন, তবে ফোন মেমোরি থেকে সরাসরি সিলেক্ট করুন অথবা পাথ দিন:",
+                        fontSize = 11.sp,
+                        color = TextMuted,
+                        lineHeight = 15.sp
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Primary Action Buttons: File Picker & Auto Scan
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                filePickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            modifier = Modifier.weight(1.2f),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberSurface),
+                            border = BorderStroke(1.dp, NeonViolet),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = NeonViolet, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Pick .GGUF File", fontSize = 11.sp, color = NeonViolet, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { viewModel.scanStorageForModels() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberSurface),
+                            border = BorderStroke(1.dp, NeonCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Auto-Scan", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "অথবা ম্যানুয়াল ফাইল পাথ দিয়ে চেক করুন:",
+                        fontSize = 10.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -701,7 +897,7 @@ fun ModelsScreen(
                         OutlinedTextField(
                             value = customPathInput,
                             onValueChange = { customPathInput = it },
-                            placeholder = { Text("e.g. models/tinyllama.gguf", color = TextMuted, fontSize = 11.sp) },
+                            placeholder = { Text("e.g. /sdcard/Download/model.gguf", color = TextMuted, fontSize = 11.sp) },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             textStyle = TextStyle(fontSize = 11.sp, color = TextPrimary, fontFamily = FontFamily.Monospace),
@@ -738,10 +934,12 @@ fun ModelsScreen(
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 if (meta.isValid) {
+                                    Text("Model Name: ${meta.modelName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text("Architecture: ${meta.architecture}", fontSize = 11.sp, color = NeonCyan, fontFamily = FontFamily.Monospace)
                                     Text("Quantization: ${meta.quantization}", fontSize = 11.sp, color = NeonCyan, fontFamily = FontFamily.Monospace)
                                     Text("Context: ${meta.contextLength} | Size: ${meta.fileSizeBytes / (1024 * 1024)} MB", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
-                                    Text("Estimated RAM: ~${meta.estimatedRamMb} MB", fontSize = 11.sp, color = NeonAmber, fontFamily = FontFamily.Monospace)
+                                    Text("Estimated RAM: ~${meta.estimatedRamMb} MB (Available: ${telemetry.availableRamMb} MB)", fontSize = 11.sp, color = NeonAmber, fontFamily = FontFamily.Monospace)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = meta.compatibilityReason,
@@ -760,7 +958,7 @@ fun ModelsScreen(
                                             colors = ButtonDefaults.buttonColors(containerColor = NeonEmerald),
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
-                                            Text("Register & Load Model", color = VoidBlack, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text("Register & Load Model into RAM", color = VoidBlack, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 } else {
@@ -800,7 +998,10 @@ fun ModelsScreen(
             LocalModelCard(
                 model = model,
                 isRecommendedForDevice = model.ramEstimateMb < telemetry.availableRamMb,
-                onLoad = { viewModel.loadModel(model) }
+                onLoad = { viewModel.loadModel(model) },
+                onUnload = { viewModel.unloadActiveModel() },
+                onDelete = { viewModel.deleteInstalledModel(model) },
+                onChat = { viewModel.navigateTo(VibeScreen.CHAT) }
             )
         }
     }
@@ -810,7 +1011,10 @@ fun ModelsScreen(
 fun LocalModelCard(
     model: LocalModelEntity,
     isRecommendedForDevice: Boolean,
-    onLoad: () -> Unit
+    onLoad: () -> Unit,
+    onUnload: () -> Unit,
+    onDelete: () -> Unit,
+    onChat: () -> Unit
 ) {
     val isActive = model.status == "ACTIVE"
 
@@ -824,7 +1028,7 @@ fun LocalModelCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = model.name,
                         fontSize = 14.sp,
@@ -837,10 +1041,19 @@ fun LocalModelCard(
                         color = TextMuted,
                         fontFamily = FontFamily.Monospace
                     )
+                    if (!model.filePath.isNullOrBlank()) {
+                        Text(
+                            text = model.filePath,
+                            fontSize = 9.sp,
+                            color = TextMuted.copy(alpha = 0.7f),
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1
+                        )
+                    }
                 }
 
                 if (isActive) {
-                    VibeStatusPill(label = "ACTIVE", statusColor = NeonEmerald)
+                    VibeStatusPill(label = "ACTIVE IN RAM", statusColor = NeonEmerald)
                 } else if (!isRecommendedForDevice) {
                     VibeStatusPill(label = "HIGH RAM", statusColor = NeonAmber)
                 }
@@ -855,20 +1068,53 @@ fun LocalModelCard(
             ) {
                 Text(
                     text = "Est. RAM: ${model.ramEstimateMb} MB | Context: ${model.contextLength}",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     color = TextSecondary,
                     fontFamily = FontFamily.Monospace
                 )
 
-                if (!isActive) {
-                    Button(
-                        onClick = onLoad,
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceElevated),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.6f)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isActive) {
+                        Button(
+                            onClick = onChat,
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonEmerald),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.ChatBubble, contentDescription = null, tint = VoidBlack, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Chat", fontSize = 11.sp, color = VoidBlack, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = onUnload,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceElevated),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, NeonAmber.copy(alpha = 0.6f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("Unload", fontSize = 11.sp, color = NeonAmber, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = onLoad,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberSurfaceElevated),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.6f)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Load to RAM", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Text("Load to RAM", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Model", tint = TextMuted, modifier = Modifier.size(14.dp))
                     }
                 }
             }

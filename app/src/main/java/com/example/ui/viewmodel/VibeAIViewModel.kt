@@ -38,6 +38,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.net.Uri
+import android.provider.OpenableColumns
+import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.File
 
 enum class VibeScreen {
@@ -50,6 +54,17 @@ enum class VibeScreen {
     MODELS,
     SETTINGS
 }
+
+data class ImportProgress(
+    val isImporting: Boolean = false,
+    val fileName: String = "",
+    val progressPercent: Float = 0f,
+    val copiedMb: Long = 0,
+    val totalMb: Long = 0,
+    val statusText: String = "",
+    val isSuccess: Boolean = false,
+    val error: String? = null
+)
 
 data class BenchmarkResult(
     val modelName: String,
@@ -169,6 +184,13 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
     // GGUF Import Validation State
     private val _importedModelValidation = MutableStateFlow<GGUFModelMetadata?>(null)
     val importedModelValidation: StateFlow<GGUFModelMetadata?> = _importedModelValidation.asStateFlow()
+
+    // File Picker Import state
+    private val _importProgress = MutableStateFlow<ImportProgress?>(null)
+    val importProgress: StateFlow<ImportProgress?> = _importProgress.asStateFlow()
+
+    private val _scanStatusMessage = MutableStateFlow<String?>(null)
+    val scanStatusMessage: StateFlow<String?> = _scanStatusMessage.asStateFlow()
 
     // Creator dialog
     private val _showCreatorDialog = MutableStateFlow(false)
@@ -311,6 +333,259 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val result = GGUFParser.parseAndValidate(file, getApplication())
             _importedModelValidation.value = result
+        }
+    }
+
+    fun dismissImportStatus() {
+        _importProgress.value = null
+    }
+
+    fun dismissScanStatus() {
+        _scanStatusMessage.value = null
+    }
+
+    fun importGGUFFromUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            var fileName = "imported_model_${System.currentTimeMillis()}.gguf"
+            var fileSize: Long = 0L
+
+            try {
+                app.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameIdx != -1) fileName = cursor.getString(nameIdx) ?: fileName
+                        if (sizeIdx != -1) fileSize = cursor.getLong(sizeIdx)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore cursor errors, fallback to default name
+            }
+
+            // Ensure directory exists
+            val modelsDir = File(app.filesDir, "models")
+            if (!modelsDir.exists()) modelsDir.mkdirs()
+
+            val targetFile = File(modelsDir, fileName)
+
+            _importProgress.value = ImportProgress(
+                isImporting = true,
+                fileName = fileName,
+                progressPercent = 0.05f,
+                copiedMb = 0,
+                totalMb = fileSize / (1024 * 1024),
+                statusText = "Importing $fileName from device storage..."
+            )
+
+            try {
+                val inputStream: InputStream? = app.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    _importProgress.value = ImportProgress(
+                        isImporting = false,
+                        fileName = fileName,
+                        error = "Could not open selected file stream from device."
+                    )
+                    return@launch
+                }
+
+                FileOutputStream(targetFile).use { outputStream ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    var totalCopied = 0L
+
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalCopied += bytesRead
+
+                        val progress = if (fileSize > 0) (totalCopied.toFloat() / fileSize.toFloat()).coerceIn(0f, 0.95f) else 0.5f
+                        _importProgress.value = ImportProgress(
+                            isImporting = true,
+                            fileName = fileName,
+                            progressPercent = progress,
+                            copiedMb = totalCopied / (1024 * 1024),
+                            totalMb = fileSize / (1024 * 1024),
+                            statusText = "Copying: ${totalCopied / (1024 * 1024)} MB / ${fileSize / (1024 * 1024)} MB..."
+                        )
+                    }
+                }
+                inputStream.close()
+
+                // Validate and register
+                _importProgress.value = ImportProgress(
+                    isImporting = true,
+                    fileName = fileName,
+                    progressPercent = 0.98f,
+                    copiedMb = targetFile.length() / (1024 * 1024),
+                    totalMb = targetFile.length() / (1024 * 1024),
+                    statusText = "Validating GGUF binary magic header..."
+                )
+
+                val metadata = GGUFParser.parseAndValidate(targetFile, app)
+                if (metadata.isValid) {
+                    val entity = LocalModelEntity(
+                        id = "imported_${System.currentTimeMillis()}_${targetFile.nameWithoutExtension.hashCode()}",
+                        name = if (metadata.modelName.isNotBlank() && metadata.modelName != "unknown") metadata.modelName else targetFile.nameWithoutExtension,
+                        parameterSize = "Quantized",
+                        quantization = metadata.quantization,
+                        fileSizeMb = targetFile.length() / (1024 * 1024),
+                        ramEstimateMb = metadata.estimatedRamMb,
+                        contextLength = metadata.contextLength,
+                        backend = "GGUF / llama.cpp",
+                        status = "INSTALLED",
+                        downloadProgress = 100,
+                        filePath = targetFile.absolutePath
+                    )
+                    db.localModelDao().insertOrUpdate(entity)
+                    loadModel(entity)
+
+                    _importProgress.value = ImportProgress(
+                        isImporting = false,
+                        fileName = fileName,
+                        progressPercent = 1.0f,
+                        copiedMb = targetFile.length() / (1024 * 1024),
+                        totalMb = targetFile.length() / (1024 * 1024),
+                        statusText = "Successfully imported and loaded ${entity.name} into VibeAI Engine!",
+                        isSuccess = true
+                    )
+                } else {
+                    _importProgress.value = ImportProgress(
+                        isImporting = false,
+                        fileName = fileName,
+                        error = "GGUF validation failed: ${metadata.errorMessage ?: "Invalid container structure"}"
+                    )
+                }
+            } catch (e: Exception) {
+                _importProgress.value = ImportProgress(
+                    isImporting = false,
+                    fileName = fileName,
+                    error = "Import failed: ${e.localizedMessage ?: e.message}"
+                )
+            }
+        }
+    }
+
+    fun validateAndLoadDirectFile(file: File) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val metadata = GGUFParser.parseAndValidate(file, app)
+            _importedModelValidation.value = metadata
+            if (metadata.isValid) {
+                val entity = LocalModelEntity(
+                    id = "direct_${System.currentTimeMillis()}_${file.nameWithoutExtension.hashCode()}",
+                    name = if (metadata.modelName.isNotBlank() && metadata.modelName != "unknown") metadata.modelName else file.nameWithoutExtension,
+                    parameterSize = "Quantized",
+                    quantization = metadata.quantization,
+                    fileSizeMb = file.length() / (1024 * 1024),
+                    ramEstimateMb = metadata.estimatedRamMb,
+                    contextLength = metadata.contextLength,
+                    backend = "GGUF / llama.cpp",
+                    status = "INSTALLED",
+                    downloadProgress = 100,
+                    filePath = file.absolutePath
+                )
+                db.localModelDao().insertOrUpdate(entity)
+                loadModel(entity)
+                navigateTo(VibeScreen.MODELS)
+            }
+        }
+    }
+
+    fun scanStorageForModels() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            _scanStatusMessage.value = "Scanning local storage for .gguf files..."
+            val candidates = mutableListOf<File>()
+
+            try {
+                // 1. App internal filesDir/models
+                val internalModels = File(app.filesDir, "models")
+                if (internalModels.exists() && internalModels.isDirectory) {
+                    internalModels.listFiles()?.filter { it.extension.equals("gguf", ignoreCase = true) || it.extension.equals("bin", ignoreCase = true) }?.let { candidates.addAll(it) }
+                }
+
+                // 2. SafeFileManager root workspace
+                val workDir = SafeFileManager.getRootWorkDirectory(app)
+                if (workDir.exists()) {
+                    workDir.walkTopDown().maxDepth(3).filter { it.isFile && (it.extension.equals("gguf", ignoreCase = true) || it.extension.equals("bin", ignoreCase = true)) }.forEach { candidates.add(it) }
+                }
+
+                // 3. External files dir
+                app.getExternalFilesDir(null)?.let { extDir ->
+                    if (extDir.exists()) {
+                        extDir.walkTopDown().maxDepth(3).filter { it.isFile && (it.extension.equals("gguf", ignoreCase = true) || it.extension.equals("bin", ignoreCase = true)) }.forEach { candidates.add(it) }
+                    }
+                }
+
+                // 4. Public Download & Documents directories
+                try {
+                    val publicDownload = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    if (publicDownload != null && publicDownload.exists()) {
+                        publicDownload.listFiles()?.filter { it.isFile && (it.extension.equals("gguf", ignoreCase = true) || it.extension.equals("bin", ignoreCase = true)) }?.let { candidates.addAll(it) }
+                    }
+                } catch (_: Exception) {}
+
+                try {
+                    val publicDocs = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
+                    if (publicDocs != null && publicDocs.exists()) {
+                        publicDocs.listFiles()?.filter { it.isFile && (it.extension.equals("gguf", ignoreCase = true) || it.extension.equals("bin", ignoreCase = true)) }?.let { candidates.addAll(it) }
+                    }
+                } catch (_: Exception) {}
+            } catch (e: Exception) {
+                // Catch any directory access restrictions
+            }
+
+            var newlyRegistered = 0
+            val existingPaths = db.localModelDao().getAllModelsList().map { it.filePath }.toSet()
+
+            candidates.distinctBy { it.absolutePath }.forEach { file ->
+                if (file.absolutePath !in existingPaths && file.length() > 24) {
+                    val meta = GGUFParser.parseAndValidate(file, app)
+                    if (meta.isValid) {
+                        val entity = LocalModelEntity(
+                            id = "scanned_${System.currentTimeMillis()}_${file.nameWithoutExtension.hashCode()}",
+                            name = if (meta.modelName.isNotBlank() && meta.modelName != "unknown") meta.modelName else file.nameWithoutExtension,
+                            parameterSize = "Quantized",
+                            quantization = meta.quantization,
+                            fileSizeMb = meta.fileSizeBytes / (1024 * 1024),
+                            ramEstimateMb = meta.estimatedRamMb,
+                            contextLength = meta.contextLength,
+                            backend = "GGUF / llama.cpp",
+                            status = "INSTALLED",
+                            downloadProgress = 100,
+                            filePath = file.absolutePath
+                        )
+                        db.localModelDao().insertOrUpdate(entity)
+                        newlyRegistered++
+                    }
+                }
+            }
+
+            _scanStatusMessage.value = when {
+                newlyRegistered > 0 -> "Found & registered $newlyRegistered new GGUF model(s) ready to load!"
+                candidates.isNotEmpty() -> "All ${candidates.size} discovered model(s) are already registered."
+                else -> "No .gguf files found in standard folders. Use 'Pick .GGUF File' to browse your phone's Download folder."
+            }
+        }
+    }
+
+    fun deleteInstalledModel(model: LocalModelEntity) {
+        viewModelScope.launch {
+            if (model.status == "ACTIVE") {
+                unloadActiveModel()
+            }
+            db.localModelDao().deleteById(model.id)
+            model.filePath?.let { path ->
+                try {
+                    val f = File(path)
+                    val app = getApplication<Application>()
+                    if (f.exists() && (f.absolutePath.startsWith(app.filesDir.absolutePath) || f.absolutePath.startsWith(SafeFileManager.getRootWorkDirectory(app).absolutePath))) {
+                        f.delete()
+                    }
+                } catch (e: Exception) {
+                    // Ignore file deletion errors
+                }
+            }
         }
     }
 

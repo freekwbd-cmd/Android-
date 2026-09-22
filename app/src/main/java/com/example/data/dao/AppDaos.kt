@@ -59,6 +59,12 @@ interface LocalModelDao {
     @Query("SELECT * FROM local_models WHERE status = 'ACTIVE' LIMIT 1")
     fun getActiveModel(): Flow<LocalModelEntity?>
 
+    @Query("SELECT * FROM local_models")
+    suspend fun getAllModelsList(): List<LocalModelEntity>
+
+    @Query("DELETE FROM local_models WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(model: LocalModelEntity)
 

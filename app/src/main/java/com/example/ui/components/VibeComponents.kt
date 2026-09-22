@@ -256,8 +256,9 @@ fun VibeHeaderBar(
                 ) {
                     // Logo & Brand
                     Row(
+                        modifier = Modifier.weight(1f, fill = false),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -274,12 +275,12 @@ fun VibeHeaderBar(
                             Text(
                                 text = "V",
                                 fontWeight = FontWeight.Black,
-                                fontSize = 20.sp,
+                                fontSize = 18.sp,
                                 color = Color.White
                             )
                         }
 
-                        Column {
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -287,46 +288,50 @@ fun VibeHeaderBar(
                                 Text(
                                     text = "VIBE",
                                     fontWeight = FontWeight.Black,
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     color = TextPrimary,
-                                    letterSpacing = 1.5.sp
+                                    letterSpacing = 1.sp
                                 )
                                 Text(
                                     text = "AI",
                                     fontWeight = FontWeight.Black,
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     color = NeonCrimson,
-                                    letterSpacing = 1.5.sp
+                                    letterSpacing = 1.sp
                                 )
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(NeonViolet.copy(alpha = 0.25f))
                                         .border(0.8.dp, NeonViolet, RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
                                 ) {
                                     Text(
-                                        text = "VIBE EDITION",
-                                        fontSize = 9.sp,
+                                        text = "VIBE",
+                                        fontSize = 8.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = NeonCyan,
-                                        letterSpacing = 0.8.sp
+                                        letterSpacing = 0.5.sp
                                     )
                                 }
                             }
                             Text(
-                                text = "Architect: Shorif Uddin Piash (শরিফ উদ্দিন পিয়াস)",
-                                fontSize = 10.sp,
+                                text = "Architect: Shorif Uddin Piash (পিয়াস)",
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = NeonCyan.copy(alpha = 0.9f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 modifier = Modifier.clickable { onCreatorClick() }
                             )
                         }
                     }
 
+                    Spacer(modifier = Modifier.width(6.dp))
+
                     // Mode switch pill & RAM HUD
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -339,19 +344,21 @@ fun VibeHeaderBar(
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(7.dp)
+                                        .size(6.dp)
                                         .clip(CircleShape)
                                         .background((if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan).copy(alpha = pulseAlpha))
                                 )
                                 Text(
                                     text = if (mode == AIMode.OFFLINE) "OFFLINE" else "ONLINE",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Black,
-                                    color = if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan
+                                    color = if (mode == AIMode.OFFLINE) NeonEmerald else NeonCyan,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -364,11 +371,13 @@ fun VibeHeaderBar(
                         ) {
                             Text(
                                 text = "${ramMbAvailable}M",
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = NeonCyan,
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                             )
                         }
                     }

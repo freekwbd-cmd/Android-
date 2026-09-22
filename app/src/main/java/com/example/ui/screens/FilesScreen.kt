@@ -70,6 +70,7 @@ import com.example.ui.theme.NeonViolet
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.VoidBlack
 import com.example.ui.viewmodel.VibeAIViewModel
 import com.example.ui.viewmodel.VibeScreen
 import kotlinx.coroutines.launch
@@ -297,6 +298,7 @@ fun FilesScreen(
                 FileItemCard(
                     item = item,
                     onOpenInCode = { viewModel.openFileInCodeWorkspace(item.file) },
+                    onLoadModel = { viewModel.validateAndLoadDirectFile(item.file) },
                     onAnalyze = {
                         val prompt = "Perform comprehensive analysis of file ${item.name}:\n\n- Explain structure\n- Identify performance bottlenecks or bugs\n- Suggest clean architecture improvements"
                         viewModel.createNewConversation("Analyze: ${item.name}")
@@ -320,6 +322,7 @@ fun FilesScreen(
 fun FileItemCard(
     item: SafeFileItem,
     onOpenInCode: () -> Unit,
+    onLoadModel: () -> Unit,
     onAnalyze: () -> Unit,
     onExtract: () -> Unit
 ) {
@@ -387,8 +390,17 @@ fun FileItemCard(
             }
 
             // Quick actions
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (item.category == FileCategory.CODE || item.category == FileCategory.DOCUMENTS) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (item.name.endsWith(".gguf", ignoreCase = true) || item.name.endsWith(".bin", ignoreCase = true)) {
+                    Button(
+                        onClick = onLoadModel,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonViolet),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("⚡ Load Model", fontSize = 10.sp, color = VoidBlack, fontWeight = FontWeight.Bold)
+                    }
+                } else if (item.category == FileCategory.CODE || item.category == FileCategory.DOCUMENTS) {
                     IconButton(onClick = onOpenInCode, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.Code, contentDescription = "Edit Code", tint = NeonCyan, modifier = Modifier.size(16.dp))
                     }
