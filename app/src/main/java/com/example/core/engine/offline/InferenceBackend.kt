@@ -46,17 +46,11 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
     private var _allocatedMemoryMb: Long = 0
     private var _contextLength: Int = 2048
 
+    // Native llama.cpp session handle (0 = none). Set by loadModel.
+    private var nativeHandle: Long = 0L
+
     override val isNativeLibraryAvailable: Boolean
-        get() {
-            return try {
-                // Check if libllama.so or compatible native library is present in nativeLibraryDir
-                val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-                val libs = nativeDir.listFiles()?.map { it.name } ?: emptyList()
-                libs.any { it.contains("llama") || it.contains("ggml") || it.contains("onnx") }
-            } catch (e: Exception) {
-                false
-            }
-        }
+        get() = LlamaBridge.isAvailable
 
     override suspend fun loadModel(file: File, contextLength: Int): ModelLoadResult = withContext(Dispatchers.IO) {
         if (!file.exists()) {
@@ -76,6 +70,21 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
         // Unload previous model if any
         unloadModel()
 
+        // Load weights into the native llama.cpp session (mmap, no full RAM copy)
+        if (!LlamaBridge.isAvailable) {
+            return@withContext ModelLoadResult.Failure(
+                "Native engine (libllama-android.so) missing from APK. Rebuild with the NDK native library."
+            )
+        }
+        val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+        val handle = LlamaBridge.nativeLoadModel(file.absolutePath, contextLength, threads)
+        if (handle == 0L) {
+            return@withContext ModelLoadResult.Failure(
+                "Native model load failed (out of memory or corrupt weights)."
+            )
+        }
+
+        nativeHandle = handle
         _loadedModelPath = file.absolutePath
         _activeModelName = validation.modelName
         _allocatedMemoryMb = validation.estimatedRamMb
@@ -90,6 +99,14 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
     }
 
     override suspend fun unloadModel() = withContext(Dispatchers.IO) {
+        try {
+            if (nativeHandle != 0L && LlamaBridge.isAvailable) {
+                LlamaBridge.nativeUnload(nativeHandle)
+            }
+        } catch (e: Exception) {
+            // best effort
+        }
+        nativeHandle = 0L
         _isModelLoaded = false
         _loadedModelPath = null
         _activeModelName = "None"
@@ -119,15 +136,36 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
         }
 
         // Real token generation pipeline:
-        // When native llama.cpp is present, tokens stream directly from tensor evaluation.
-        // When running in container without JNI .so compiled, it executes honest verified file tokenization
-        // and informs the developer without generating fake tokens!
+        // Native llama.cpp session streams tokens directly from the loaded weights.
         val stringBuilder = StringBuilder()
         var tokenCount = 0
 
-        if (isNativeLibraryAvailable) {
-            // Native JNI execution branch
-            // Real tokens streamed directly from loaded weights
+        if (isNativeLibraryAvailable && nativeHandle != 0L) {
+            // Native JNI execution branch — real tokens from tensor evaluation.
+            val handle = nativeHandle
+            val code = LlamaBridge.nativeGenerate(
+                handle,
+                prompt,
+                parameters.maxTokens,
+                parameters.temperature,
+                parameters.topP,
+                object : LlamaBridge.TokenCallback {
+                    override fun onToken(token: String) {
+                        if (isCancelled.get() || !coroutineContext.isActive) {
+                            LlamaBridge.nativeCancel(handle)
+                            return
+                        }
+                        stringBuilder.append(token)
+                        tokenCount++
+                        onToken(token)
+                    }
+                }
+            )
+            if (code < 0 && tokenCount == 0) {
+                val notice = "Native generation failed (error $code). Try a smaller model or restart the app."
+                onToken(notice)
+                return@withContext GenerationResult(notice, 12, 10, 0f)
+            }
         } else {
             // Honest notification of container environment state + real prompt token echo processing
             val header = "[GGUF Engine: $_activeModelName (${loadedFile.length() / (1024 * 1024)}MB)]\n"
