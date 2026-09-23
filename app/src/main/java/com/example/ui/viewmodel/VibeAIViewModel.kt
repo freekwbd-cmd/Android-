@@ -11,6 +11,7 @@ import com.example.core.engine.offline.DeviceCapability
 import com.example.core.engine.offline.DeviceCapabilityDetector
 import com.example.core.engine.offline.GGUFModelMetadata
 import com.example.core.engine.offline.GGUFParser
+import com.example.core.engine.offline.ModelLoadResult
 import com.example.core.engine.offline.ThermalManager
 import com.example.core.engine.offline.ThermalState
 import com.example.core.files.FileCategory
@@ -208,6 +209,36 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
         loadInitialChat()
         refreshFiles()
         loadInitialCodeFile()
+        repairPhantomModelEntries()
+    }
+
+    /**
+     * One-time self-heal: older installs seeded catalog models (e.g. "TinyLlama 1.1B Chat")
+     * as ACTIVE/INSTALLED even though no .gguf file exists on device. Demote any such
+     * phantom row back to NOT_DOWNLOADED so the UI never shows a default model the
+     * user does not actually have.
+     */
+    private fun repairPhantomModelEntries() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dao = db.localModelDao()
+                for (m in dao.getAllModelsList()) {
+                    val fileOk = !m.filePath.isNullOrBlank() && File(m.filePath).exists()
+                    if ((m.status == "ACTIVE" || m.status == "INSTALLED") && !fileOk) {
+                        dao.update(
+                            m.copy(
+                                status = "NOT_DOWNLOADED",
+                                downloadProgress = 0,
+                                isDefault = false,
+                                filePath = null
+                            )
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                // best effort; never block startup
+            }
+        }
     }
 
     private fun loadInitialChat() {
@@ -437,17 +468,35 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
                         filePath = targetFile.absolutePath
                     )
                     db.localModelDao().insertOrUpdate(entity)
-                    loadModel(entity)
-
                     _importProgress.value = ImportProgress(
-                        isImporting = false,
+                        isImporting = true,
                         fileName = fileName,
-                        progressPercent = 1.0f,
+                        progressPercent = 0.99f,
                         copiedMb = targetFile.length() / (1024 * 1024),
                         totalMb = targetFile.length() / (1024 * 1024),
-                        statusText = "Successfully imported and loaded ${entity.name} into VibeAI Engine!",
-                        isSuccess = true
+                        statusText = "Loading ${entity.name} into RAM..."
                     )
+                    when (val loadResult = loadModelSuspend(entity)) {
+                        is ModelLoadResult.Success -> _importProgress.value = ImportProgress(
+                            isImporting = false,
+                            fileName = fileName,
+                            progressPercent = 1.0f,
+                            copiedMb = targetFile.length() / (1024 * 1024),
+                            totalMb = targetFile.length() / (1024 * 1024),
+                            statusText = "Successfully imported and loaded ${entity.name} into VibeAI Engine!",
+                            isSuccess = true
+                        )
+                        is ModelLoadResult.Failure -> _importProgress.value = ImportProgress(
+                            isImporting = false,
+                            fileName = fileName,
+                            error = "Imported, but load failed: ${loadResult.reason}"
+                        )
+                        ModelLoadResult.NotLoaded -> _importProgress.value = ImportProgress(
+                            isImporting = false,
+                            fileName = fileName,
+                            error = "Imported, but the model did not load (unknown error)."
+                        )
+                    }
                 } else {
                     _importProgress.value = ImportProgress(
                         isImporting = false,
@@ -485,8 +534,20 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
                     filePath = file.absolutePath
                 )
                 db.localModelDao().insertOrUpdate(entity)
-                loadModel(entity)
-                navigateTo(VibeScreen.MODELS)
+                when (val loadResult = loadModelSuspend(entity)) {
+                    is ModelLoadResult.Success -> navigateTo(VibeScreen.MODELS)
+                    is ModelLoadResult.Failure -> _importProgress.value = ImportProgress(
+                        isImporting = false,
+                        fileName = file.name,
+                        error = "File is valid, but load failed: ${loadResult.reason}"
+                    )
+                    ModelLoadResult.NotLoaded -> _importProgress.value = ImportProgress(
+                        isImporting = false,
+                        fileName = file.name,
+                        error = "File is valid, but the model did not load (unknown error)."
+                    )
+                }
+                _importedModelValidation.value = null
             }
         }
     }
@@ -606,20 +667,39 @@ class VibeAIViewModel(application: Application) : AndroidViewModel(application) 
                 filePath = file.absolutePath
             )
             db.localModelDao().insertOrUpdate(entity)
-            loadModel(entity)
+            when (val loadResult = loadModelSuspend(entity)) {
+                is ModelLoadResult.Success -> { /* activated; card shows ACTIVE */ }
+                is ModelLoadResult.Failure -> _importProgress.value = ImportProgress(
+                    isImporting = false,
+                    fileName = file.name,
+                    error = "Registered, but load failed: ${loadResult.reason}"
+                )
+                ModelLoadResult.NotLoaded -> _importProgress.value = ImportProgress(
+                    isImporting = false,
+                    fileName = file.name,
+                    error = "Registered, but the model did not load (unknown error)."
+                )
+            }
             _importedModelValidation.value = null
         }
     }
 
     fun loadModel(model: LocalModelEntity) {
-        viewModelScope.launch {
-            val success = router.localEngine.loadModel(model.id, model.filePath, model.name, model.ramEstimateMb)
-            if (success) {
-                db.localModelDao().deactivateAllModels()
-                db.localModelDao().activateModel(model.id)
-                refreshTelemetry()
-            }
+        viewModelScope.launch { loadModelSuspend(model) }
+    }
+
+    /**
+     * Loads the model into RAM and marks it ACTIVE in the DB.
+     * Returns the real engine result so callers can report honest success/failure.
+     */
+    suspend fun loadModelSuspend(model: LocalModelEntity): ModelLoadResult {
+        val result = router.localEngine.loadModel(model.id, model.filePath, model.name, model.ramEstimateMb)
+        if (result is ModelLoadResult.Success) {
+            db.localModelDao().deactivateAllModels()
+            db.localModelDao().activateModel(model.id)
+            refreshTelemetry()
         }
+        return result
     }
 
     fun unloadActiveModel() {

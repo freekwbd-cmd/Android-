@@ -74,9 +74,9 @@ abstract class AppDatabase : RoomDatabase() {
                         ramEstimateMb = 900,
                         contextLength = 2048,
                         backend = "GGUF / llama.cpp",
-                        status = "ACTIVE",
-                        downloadProgress = 100,
-                        isDefault = true
+                        status = "NOT_DOWNLOADED",
+                        downloadProgress = 0,
+                        isDefault = false
                     ),
                     LocalModelEntity(
                         id = "qwen2.5-coder-1.5b",
@@ -87,8 +87,8 @@ abstract class AppDatabase : RoomDatabase() {
                         ramEstimateMb = 1400,
                         contextLength = 4096,
                         backend = "GGUF / llama.cpp",
-                        status = "INSTALLED",
-                        downloadProgress = 100,
+                        status = "NOT_DOWNLOADED",
+                        downloadProgress = 0,
                         isDefault = false
                     ),
                     LocalModelEntity(

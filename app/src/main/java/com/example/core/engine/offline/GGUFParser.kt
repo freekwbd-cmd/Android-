@@ -135,7 +135,9 @@ object GGUFParser {
                     // Gracefully ignore KV parsing desync, use inferred metadata
                 }
 
-                // Calculate memory requirement: Model weights + KV Cache budget
+                // Calculate memory requirement: llama.cpp memory-maps the weight file, so the
+                // full file does NOT need to fit in RAM. What needs RAM is the KV cache +
+                // compute buffers. estimatedRamMb is still reported for display purposes.
                 val fileSizeMb = fileSize / (1024 * 1024)
                 val kvCacheEstimateMb = (contextLength * 0.15f).toLong().coerceIn(64, 1024)
                 val estimatedRamMb = fileSizeMb + kvCacheEstimateMb + 150 // 150MB execution scratchpad
@@ -146,11 +148,13 @@ object GGUFParser {
                 actManager.getMemoryInfo(memInfo)
                 val availableDeviceRamMb = memInfo.availMem / (1024 * 1024)
 
-                val isCompatible = availableDeviceRamMb > (estimatedRamMb * 0.85).toLong() && !memInfo.lowMemory
+                // Weights are mmap'd: only KV cache + runtime buffers (~768MB headroom) must fit in free RAM.
+                val runtimeNeedMb = kvCacheEstimateMb + 768
+                val isCompatible = availableDeviceRamMb > runtimeNeedMb && !memInfo.lowMemory
                 val compatibilityReason = if (isCompatible) {
-                    "Compatible: Device has ${availableDeviceRamMb} MB free RAM (Model requires ~${estimatedRamMb} MB)"
+                    "Compatible: Device has ${availableDeviceRamMb} MB free RAM (runtime needs ~${runtimeNeedMb} MB; ${fileSizeMb} MB weights are memory-mapped)"
                 } else {
-                    "High RAM Usage: Requires ~${estimatedRamMb} MB, Device has ${availableDeviceRamMb} MB free."
+                    "Low RAM: Device has ${availableDeviceRamMb} MB free, runtime needs ~${runtimeNeedMb} MB for KV cache. Close background apps and retry."
                 }
 
                 return@withContext GGUFModelMetadata(
@@ -194,8 +198,8 @@ object GGUFParser {
                     contextLength = 2048,
                     fileSizeBytes = fileSize,
                     estimatedRamMb = estRam,
-                    isCompatibleWithDevice = availableDeviceRamMb > estRam,
-                    compatibilityReason = "Loaded via GGUF Container Parser (${fileSizeMb} MB)"
+                    isCompatibleWithDevice = availableDeviceRamMb > 1024 && !memInfo.lowMemory,
+                    compatibilityReason = "Loaded via GGUF Container Parser (${fileSizeMb} MB, weights memory-mapped)"
                 )
             }
 

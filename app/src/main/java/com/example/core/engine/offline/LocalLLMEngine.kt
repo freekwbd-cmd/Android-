@@ -27,7 +27,7 @@ interface LocalLLMEngine {
     val allocatedMemoryMb: Long
     val backend: InferenceBackend
 
-    suspend fun loadModel(modelId: String, modelPath: String?, modelName: String, estimatedRamMb: Long): Boolean
+    suspend fun loadModel(modelId: String, modelPath: String?, modelName: String, estimatedRamMb: Long): ModelLoadResult
     suspend fun loadGGUFFile(file: File): ModelLoadResult
     suspend fun unloadModel()
     suspend fun generateStream(
@@ -63,21 +63,19 @@ class VibeLocalLLMEngine(private val context: Context) : LocalLLMEngine {
         modelPath: String?,
         modelName: String,
         estimatedRamMb: Long
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): ModelLoadResult = withContext(Dispatchers.IO) {
         if (modelPath == null) {
             // Check if there is a local file in the workspace or models directory
             val modelsDir = File(context.filesDir, "models").apply { mkdirs() }
             val candidate = File(modelsDir, "$modelName.gguf")
             return@withContext if (candidate.exists()) {
-                val res = backend.loadModel(candidate)
-                res is ModelLoadResult.Success
+                backend.loadModel(candidate)
             } else {
-                false
+                ModelLoadResult.Failure("Model file not found on device: $modelName.gguf")
             }
         }
         val file = File(modelPath)
-        val res = backend.loadModel(file)
-        res is ModelLoadResult.Success
+        backend.loadModel(file)
     }
 
     override suspend fun loadGGUFFile(file: File): ModelLoadResult = withContext(Dispatchers.IO) {
