@@ -27,11 +27,60 @@ static std::string jstring_to_std(JNIEnv *env, jstring js) {
     return s;
 }
 
+// Convert raw UTF-8 bytes to a Java String without ever aborting the runtime.
+// (env->NewStringUTF() kills the process on malformed input, and token pieces
+// from byte-fallback BPE tokens are frequently not valid UTF-8.)
+static jstring utf8_bytes_to_jstring(JNIEnv *env, const char *s, size_t len) {
+    std::vector<jchar> utf16;
+    utf16.reserve(len);
+    size_t i = 0;
+    while (i < len) {
+        uint32_t cp = 0xFFFD;
+        size_t n = 1;
+        unsigned char c0 = static_cast<unsigned char>(s[i]);
+        if (c0 < 0x80) {
+            cp = c0; n = 1;
+        } else if ((c0 >> 5) == 0x6 && i + 1 < len) {
+            unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+            if ((c1 >> 6) == 0x2) {
+                cp = ((c0 & 0x1F) << 6) | (c1 & 0x3F); n = 2;
+                if (cp < 0x80) cp = 0xFFFD;
+            }
+        } else if ((c0 >> 4) == 0xE && i + 2 < len) {
+            unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+            unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+            if ((c1 >> 6) == 0x2 && (c2 >> 6) == 0x2) {
+                cp = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F); n = 3;
+                if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
+            }
+        } else if ((c0 >> 3) == 0x1E && i + 3 < len) {
+            unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+            unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+            unsigned char c3 = static_cast<unsigned char>(s[i + 3]);
+            if ((c1 >> 6) == 0x2 && (c2 >> 6) == 0x2 && (c3 >> 6) == 0x2) {
+                cp = ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+                n = 4;
+                if (cp < 0x10000 || cp > 0x10FFFF) cp = 0xFFFD;
+            }
+        }
+        if (cp <= 0xFFFF) {
+            utf16.push_back(static_cast<jchar>(cp));
+        } else {
+            cp -= 0x10000;
+            utf16.push_back(static_cast<jchar>(0xD800 + (cp >> 10)));
+            utf16.push_back(static_cast<jchar>(0xDC00 + (cp & 0x3FF)));
+        }
+        i += n;
+    }
+    return env->NewString(utf16.data(), (jsize) utf16.size());
+}
+
 extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_com_example_core_engine_offline_LlamaBridge_nativeLoadModel(
         JNIEnv *env, jobject /*thiz*/, jstring jmodelPath, jint jnCtx, jint jnThreads) {
+    try {
     static bool backend_init = false;
     if (!backend_init) {
         llama_backend_init();
@@ -75,12 +124,20 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeLoadModel(
 
     LOGI("model loaded, n_ctx=%u", llama_n_ctx(ctx));
     return reinterpret_cast<jlong>(sess);
+    } catch (const std::exception &e) {
+        LOGE("nativeLoadModel crashed: %s", e.what());
+        return 0;
+    } catch (...) {
+        LOGE("nativeLoadModel crashed: unknown");
+        return 0;
+    }
 }
 
 JNIEXPORT jint JNICALL
 Java_com_example_core_engine_offline_LlamaBridge_nativeGenerate(
         JNIEnv *env, jobject /*thiz*/, jlong jhandle, jstring jprompt,
         jint jmaxTokens, jfloat jtemp, jfloat jtopP, jobject jcallback) {
+    try {
     auto *sess = reinterpret_cast<Session *>(jhandle);
     if (!sess || !sess->model || !sess->ctx || !sess->sampler) return -1;
 
@@ -139,9 +196,11 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeGenerate(
 
         int n = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
         if (n > 0) {
-            jstring jtok = env->NewStringUTF(std::string(piece, n).c_str());
-            env->CallVoidMethod(jcallback, onToken, jtok);
-            env->DeleteLocalRef(jtok);
+            jstring jtok = utf8_bytes_to_jstring(env, piece, (size_t) n);
+            if (jtok) {
+                env->CallVoidMethod(jcallback, onToken, jtok);
+                env->DeleteLocalRef(jtok);
+            }
             if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
         }
 
@@ -157,6 +216,13 @@ Java_com_example_core_engine_offline_LlamaBridge_nativeGenerate(
 
     LOGI("generated %d tokens", generated);
     return generated;
+    } catch (const std::exception &e) {
+        LOGE("nativeGenerate crashed: %s", e.what());
+        return -6;
+    } catch (...) {
+        LOGE("nativeGenerate crashed: unknown");
+        return -6;
+    }
 }
 
 JNIEXPORT void JNICALL

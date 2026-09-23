@@ -77,8 +77,12 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
                 "Native engine (libllama-android.so) could not be loaded.$detail Rebuild the APK with the NDK native library."
             )
         }
-        val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
-        val handle = LlamaBridge.nativeLoadModel(file.absolutePath, contextLength, threads)
+        // Phone-safe limits: cap context at 4096 (KV cache grows with context;
+        // a 32k context on a 5GB+ model would OOM-kill the app) and use at most
+        // 4 threads (8 threads = max heat + thermal throttling on phones).
+        val safeCtx = contextLength.coerceIn(512, 4096)
+        val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+        val handle = LlamaBridge.nativeLoadModel(file.absolutePath, safeCtx, threads)
         if (handle == 0L) {
             return@withContext ModelLoadResult.Failure(
                 "Native model load failed (out of memory or corrupt weights)."
@@ -89,7 +93,7 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
         _loadedModelPath = file.absolutePath
         _activeModelName = validation.modelName
         _allocatedMemoryMb = validation.estimatedRamMb
-        _contextLength = contextLength.coerceAtMost(validation.contextLength)
+        _contextLength = safeCtx.coerceAtMost(validation.contextLength)
         _isModelLoaded = true
 
         ModelLoadResult.Success(
