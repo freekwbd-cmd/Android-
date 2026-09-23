@@ -72,8 +72,9 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
 
         // Load weights into the native llama.cpp session (mmap, no full RAM copy)
         if (!LlamaBridge.isAvailable) {
+            val detail = LlamaBridge.loadError?.let { " Detail: $it" } ?: ""
             return@withContext ModelLoadResult.Failure(
-                "Native engine (libllama-android.so) missing from APK. Rebuild with the NDK native library."
+                "Native engine (libllama-android.so) could not be loaded.$detail Rebuild the APK with the NDK native library."
             )
         }
         val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)

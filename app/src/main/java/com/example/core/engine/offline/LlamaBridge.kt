@@ -8,17 +8,22 @@ object LlamaBridge {
 
     val isAvailable: Boolean
 
+    /** Why the native library failed to load (null when loaded OK). */
+    val loadError: String?
+
     init {
         var ok = false
+        var err: String? = null
         try {
             System.loadLibrary("llama-android")
             ok = true
         } catch (e: UnsatisfiedLinkError) {
-            ok = false
+            err = e.message
         } catch (e: SecurityException) {
-            ok = false
+            err = e.message
         }
         isAvailable = ok
+        loadError = err
     }
 
     interface TokenCallback {
