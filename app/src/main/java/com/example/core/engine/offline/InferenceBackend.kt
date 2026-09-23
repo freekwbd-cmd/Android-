@@ -1,5 +1,6 @@
 package com.example.core.engine.offline
 
+import android.app.ActivityManager
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -77,10 +78,26 @@ class AndroidLocalInferenceBackend(private val context: Context) : InferenceBack
                 "Native engine (libllama-android.so) could not be loaded.$detail Rebuild the APK with the NDK native library."
             )
         }
-        // Phone-safe limits: cap context at 4096 (KV cache grows with context;
-        // a 32k context on a 5GB+ model would OOM-kill the app) and use at most
-        // 4 threads (8 threads = max heat + thermal throttling on phones).
-        val safeCtx = contextLength.coerceIn(512, 4096)
+        // Phone-safe context: the KV cache needs
+        //   2 * layers * embedding * nCtx * 2 bytes of ANON memory (fp16 K+V).
+        // A fixed cap is not enough — 2048 ctx on a 5GB+/17B-class model still wants
+        // ~3GB of KV RAM, and the system then SIGKILLs the app mid-generation with
+        // NO crash log (looks like a random "auto close"). So size nCtx from the
+        // model's real architecture + current free RAM instead. Threads stay <= 4
+        // (8 threads = max heat + thermal throttling on phones).
+        val memInfo = ActivityManager.MemoryInfo()
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .getMemoryInfo(memInfo)
+        val kvPerToken = GGUFParser.kvCacheBytesPerToken(
+            validation.blockCount, validation.embeddingLength
+        )
+        // Never promise more than 1/6 of free RAM (or 1GB) to the KV cache —
+        // compute buffers + the app itself need the rest.
+        val kvBudgetBytes = minOf(memInfo.availMem / 6, 1024L * 1024 * 1024)
+            .coerceAtLeast(256L * 1024 * 1024)
+        val memSafeCtx = (kvBudgetBytes / kvPerToken).toInt()
+        val safeCtx = minOf(contextLength, validation.contextLength, memSafeCtx)
+            .coerceIn(512, 4096)
         val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
         val handle = LlamaBridge.nativeLoadModel(file.absolutePath, safeCtx, threads)
         if (handle == 0L) {

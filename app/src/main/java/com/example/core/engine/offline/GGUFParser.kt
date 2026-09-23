@@ -20,6 +20,10 @@ data class GGUFModelMetadata(
     val modelName: String = "",
     val quantization: String = "unknown",
     val contextLength: Int = 2048,
+    /** transformer layer count (from "<arch>.block_count"); 0 = unknown */
+    val blockCount: Int = 0,
+    /** embedding width (from "<arch>.embedding_length"); 0 = unknown */
+    val embeddingLength: Int = 0,
     val fileSizeBytes: Long = 0,
     val estimatedRamMb: Long = 0,
     val isCompatibleWithDevice: Boolean = false,
@@ -30,6 +34,17 @@ object GGUFParser {
 
     private const val GGUF_MAGIC_LE = 0x46554747 // "GGUF" in little endian ('G' 'G' 'U' 'F')
     private const val GGUF_MAGIC_BE = 0x47554646 // "GGUF" in big endian
+
+    /**
+     * fp16 KV-cache bytes needed per context token: 2 (K+V) * layers * embedding * 2 bytes.
+     * (Slightly conservative for GQA models, which share KV heads — safe direction.)
+     * Unknown architecture falls back to an 8B-class shape (32 layers x 4096).
+     */
+    fun kvCacheBytesPerToken(blockCount: Int, embeddingLength: Int): Long =
+        if (blockCount > 0 && embeddingLength > 0)
+            2L * blockCount * embeddingLength * 2L
+        else
+            2L * 32 * 4096 * 2L
 
     suspend fun parseAndValidate(file: File, context: Context): GGUFModelMetadata = withContext(Dispatchers.IO) {
         if (!file.exists()) {
@@ -86,6 +101,8 @@ object GGUFParser {
                 var modelName = file.nameWithoutExtension
                 var quantization = inferQuantizationFromName(file.name)
                 var contextLength = 2048
+                var blockCount = 0
+                var embeddingLength = 0
 
                 // Attempt to read key-value metadata safely without breaking on complex structures
                 try {
@@ -124,6 +141,16 @@ object GGUFParser {
                                     contextLength = cl.toInt().coerceIn(512, 131072)
                                 } else safeSkipValue(fis, valueType)
                             }
+                            "$architecture.block_count", "llama.block_count", "qwen2.block_count", "phi.block_count", "mistral.block_count", "gemma.block_count" -> {
+                                if (valueType in listOf(2, 3, 4, 5)) {
+                                    blockCount = (safeReadUInt32(fis) ?: 0).coerceIn(0, 512)
+                                } else safeSkipValue(fis, valueType)
+                            }
+                            "$architecture.embedding_length", "llama.embedding_length", "qwen2.embedding_length", "phi.embedding_length", "mistral.embedding_length", "gemma.embedding_length" -> {
+                                if (valueType in listOf(2, 3, 4, 5)) {
+                                    embeddingLength = (safeReadUInt32(fis) ?: 0).coerceIn(0, 65536)
+                                } else safeSkipValue(fis, valueType)
+                            }
                             else -> {
                                 val skipped = safeSkipValue(fis, valueType)
                                 if (!skipped) break // Stream desynced, stop KV scan gracefully
@@ -137,9 +164,14 @@ object GGUFParser {
 
                 // Calculate memory requirement: llama.cpp memory-maps the weight file, so the
                 // full file does NOT need to fit in RAM. What needs RAM is the KV cache +
-                // compute buffers. estimatedRamMb is still reported for display purposes.
+                // compute buffers. The KV cache is fp16 K+V:
+                //   2 * blockCount * embeddingLength * 2 bytes per context token.
+                // The old estimate (contextLength * 0.15MB) was ~5-10x too small for big
+                // models, which is why the app got silently SIGKILLed mid-generation.
                 val fileSizeMb = fileSize / (1024 * 1024)
-                val kvCacheEstimateMb = (contextLength * 0.15f).toLong().coerceIn(64, 1024)
+                val kvPerTokenBytes = kvCacheBytesPerToken(blockCount, embeddingLength)
+                val kvCacheEstimateMb =
+                    ((kvPerTokenBytes * contextLength) / (1024 * 1024)).coerceIn(64, 8192)
                 val estimatedRamMb = fileSizeMb + kvCacheEstimateMb + 150 // 150MB execution scratchpad
 
                 // Check device capability
@@ -167,6 +199,8 @@ object GGUFParser {
                     modelName = modelName,
                     quantization = quantization,
                     contextLength = contextLength,
+                    blockCount = blockCount,
+                    embeddingLength = embeddingLength,
                     fileSizeBytes = fileSize,
                     estimatedRamMb = estimatedRamMb,
                     isCompatibleWithDevice = isCompatible,
